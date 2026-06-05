@@ -99,6 +99,11 @@ st.markdown(
         color: #71717a;
         flex-shrink: 0;
       }
+      .ib-url.ib-url-inline { margin-top: 0; min-width: 0; flex: 1; }
+      div[data-testid="stHorizontalBlock"] .stButton > button {
+        margin-top: 0;
+        white-space: nowrap;
+      }
 
       .section-label {
         font-size: 0.7rem;
@@ -255,14 +260,20 @@ with header_right:
     )
 
 if online:
-    st.markdown(
-        f'<div class="ib-url"><span class="ib-url-label">Tunnel</span>{tunnel_url}</div>',
-        unsafe_allow_html=True,
-    )
-    if st.button("Restart tunnel", use_container_width=False):
-        with st.spinner("Restarting..."):
-            connect_tunnel(force_restart=True)
-        st.rerun()
+    st.markdown('<div style="margin-top:0.85rem"></div>', unsafe_allow_html=True)
+    url_col, btn_col = st.columns([5.5, 1.5], vertical_alignment="center", gap="small")
+    with url_col:
+        st.markdown(
+            f'<div class="ib-url ib-url-inline">'
+            f'<span class="ib-url-label">Tunnel</span>{tunnel_url}'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with btn_col:
+        if st.button("Restart tunnel", width="stretch"):
+            with st.spinner("Restarting..."):
+                connect_tunnel(force_restart=True)
+            st.rerun()
 else:
     st.error("Could not connect the tunnel. Make sure cloudflared is installed, then restart the app.")
     if st.button("Retry connection", type="primary"):
@@ -344,7 +355,7 @@ def render_output() -> None:
     if filename:
         preview_path = os.path.join(SHARED_DIR, filename)
         if os.path.isfile(preview_path):
-            st.image(preview_path, use_container_width=True)
+            st.image(preview_path, width="stretch")
 
     history = st.session_state.history or []
     if len(history) > 1:
