@@ -38,60 +38,80 @@ PASTE_PANEL = """<!doctype html>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #171923;
-      --border: #31333f;
+      --surface: #141416;
+      --border: #2a2a2e;
+      --border-active: #52525b;
       --text: #fafafa;
-      --muted: #808495;
-      --accent: #478cff;
-      --success: #21c354;
-      --error: #ff4b4b;
+      --muted: #71717a;
+      --success: #22c55e;
+      --error: #ef4444;
     }
     * { box-sizing: border-box; }
-    body {
+    html, body {
       margin: 0;
-      padding: 12px;
-      background: var(--bg);
+      height: 100%;
+      background: var(--surface);
       color: var(--text);
-      font-family: "Source Sans Pro", ui-sans-serif, system-ui, sans-serif;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
     }
+    .wrap { height: 100%; padding: 10px; display: flex; }
     .dropzone {
-      min-height: 150px;
+      flex: 1;
       border: 1px dashed var(--border);
-      border-radius: 8px;
-      padding: 20px 16px;
-      text-align: center;
-      display: grid;
-      place-content: center;
-      gap: 8px;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 24px 16px;
       cursor: pointer;
       outline: none;
+      transition: border-color 0.15s, background 0.15s;
     }
-    .dropzone:focus, .dropzone:hover {
-      border-color: var(--accent);
-      background: rgba(71, 140, 255, 0.04);
+    .dropzone:hover, .dropzone:focus {
+      border-color: var(--border-active);
+      background: rgba(255, 255, 255, 0.03);
     }
-    .title { font-size: 0.95rem; font-weight: 600; margin: 0; }
-    .hint { margin: 0; color: var(--muted); font-size: 0.85rem; line-height: 1.4; }
-    code {
-      background: rgba(255, 255, 255, 0.06);
-      padding: 1px 5px;
+    .icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: rgba(255, 255, 255, 0.04);
+      position: relative;
+    }
+    .icon::before, .icon::after {
+      content: "";
+      position: absolute;
+      background: #a1a1aa;
+      border-radius: 1px;
+    }
+    .icon::before { width: 14px; height: 2px; top: 17px; left: 11px; }
+    .icon::after { width: 2px; height: 14px; top: 11px; left: 17px; }
+    .label { margin: 0; font-size: 0.9rem; font-weight: 500; }
+    .hint { margin: 0; color: var(--muted); font-size: 0.78rem; text-align: center; line-height: 1.45; }
+    kbd {
+      font: inherit;
+      font-size: 0.72rem;
+      padding: 2px 6px;
       border-radius: 4px;
-      font-size: 0.84rem;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
     }
-    #status {
-      margin-top: 4px;
-      font-size: 0.85rem;
-      line-height: 1.4;
-    }
+    #status { min-height: 1.2em; font-size: 0.78rem; text-align: center; }
     #status.ok { color: var(--success); }
     #status.err { color: var(--error); }
   </style>
 </head>
 <body>
-  <div class="dropzone" id="zone" tabindex="0">
-    <p class="title">Paste screenshot</p>
-    <p class="hint">Click this panel, then press <code>Ctrl+V</code> or <code>Cmd+V</code></p>
-    <div id="status"></div>
+  <div class="wrap">
+    <div class="dropzone" id="zone" tabindex="0">
+      <div class="icon"></div>
+      <p class="label">Click here and paste</p>
+      <p class="hint"><kbd>Ctrl</kbd> + <kbd>V</kbd> or <kbd>Cmd</kbd> + <kbd>V</kbd></p>
+      <div id="status"></div>
+    </div>
   </div>
   <script>
     const status = document.getElementById("status");
@@ -111,7 +131,7 @@ PASTE_PANEL = """<!doctype html>
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Upload failed");
       status.className = "ok";
-      status.textContent = "Uploaded. Public URL is shown below.";
+      status.textContent = "Done. URL is in the panel below.";
       if (data.url) await navigator.clipboard.writeText(data.url);
     }
 
@@ -188,8 +208,6 @@ def record_publish(public_url: str, filename: str) -> None:
 
 def save_image_bytes(image_bytes: bytes, original_name: str | None = None) -> tuple[str, str]:
     image = Image.open(io.BytesIO(image_bytes))
-    if image.mode not in ("RGB", "RGBA"):
-        image = image.convert("RGBA")
 
     ext = "png"
     if original_name and "." in original_name:
@@ -199,7 +217,28 @@ def save_image_bytes(image_bytes: bytes, original_name: str | None = None) -> tu
 
     filename = f"live_{uuid.uuid4().hex[:10]}.{ext}"
     target_path = os.path.join(SHARED_DIR, filename)
-    image.save(target_path, format=ext.upper() if ext != "jpg" else "JPEG")
+
+    if ext == "jpg":
+        # JPEG has no alpha channel; flatten onto a white background.
+        if image.mode in ("RGBA", "LA", "P"):
+            rgba = image.convert("RGBA")
+            background = Image.new("RGB", rgba.size, (255, 255, 255))
+            background.paste(rgba, mask=rgba.split()[-1])
+            image = background
+        elif image.mode != "RGB":
+            image = image.convert("RGB")
+        image.save(target_path, format="JPEG", quality=92)
+    elif ext == "gif":
+        # Preserve animation when present.
+        is_animated = getattr(image, "is_animated", False)
+        image.save(target_path, format="GIF", save_all=is_animated)
+    elif ext == "webp":
+        image.save(target_path, format="WEBP", quality=92)
+    else:
+        if image.mode not in ("RGB", "RGBA", "L", "LA", "P"):
+            image = image.convert("RGBA")
+        image.save(target_path, format="PNG")
+
     return filename, target_path
 
 
@@ -358,7 +397,12 @@ class ImageBridgeHandler(BaseHTTPRequestHandler):
             headers, body = header_body
             if b'filename="' in headers:
                 original_name = headers.split(b'filename="', 1)[1].split(b'"', 1)[0].decode("utf-8", "ignore")
-            file_bytes = body.rstrip(b"\r\n--")
+            # Each part ends with a trailing CRLF before the next boundary marker.
+            # Strip exactly that CRLF instead of rstrip(), which would corrupt
+            # image data that legitimately ends in 0x0D, 0x0A, or 0x2D bytes.
+            if body.endswith(b"\r\n"):
+                body = body[:-2]
+            file_bytes = body
             break
 
         if not file_bytes:
@@ -400,10 +444,25 @@ def start_file_server(force: bool = False) -> None:
 
     ensure_shared_dir()
     subprocess.run(f"fuser -k {PORT}/tcp", shell=True, capture_output=True)
+    time.sleep(0.4)
 
-    FILE_SERVER = ThreadingHTTPServer(("0.0.0.0", PORT), ImageBridgeHandler)
-    thread = threading.Thread(target=FILE_SERVER.serve_forever, daemon=True)
-    thread.start()
+    try:
+        FILE_SERVER = ThreadingHTTPServer(("127.0.0.1", PORT), ImageBridgeHandler)
+        thread = threading.Thread(target=FILE_SERVER.serve_forever, daemon=True)
+        thread.start()
+        for _ in range(15):
+            if is_file_server_running():
+                return
+            time.sleep(0.1)
+    except OSError as exc:
+        # Another imgbridge/streamlit instance may already own the port.
+        if getattr(exc, "errno", None) == 98:
+            for _ in range(15):
+                if is_file_server_running():
+                    return
+                time.sleep(0.1)
+            return
+        raise
 
 
 def stop_tunnel() -> None:
@@ -448,9 +507,11 @@ def start_tunnel(timeout_seconds: int = 25) -> str | None:
             for part in line.split():
                 if part.startswith("https://") and "trycloudflare.com" in part:
                     url = part.strip()
+                    RUNTIME["cloudflare_url"] = url
+                    save_state()
                     if wait_for_tunnel_health(url):
-                        RUNTIME["cloudflare_url"] = url
-                        save_state()
+                        return url
+                    if is_tunnel_process_running():
                         return url
                     return None
     return None
@@ -469,7 +530,7 @@ def is_tunnel_process_running() -> bool:
     return result.returncode == 0
 
 
-def check_tunnel_health(base_url: str | None) -> bool:
+def check_tunnel_health(base_url: str | None, timeout: float = 4.0) -> bool:
     if not base_url:
         return False
 
@@ -477,7 +538,7 @@ def check_tunnel_health(base_url: str | None) -> bool:
     for method in ("HEAD", "GET"):
         try:
             request = urllib.request.Request(target, method=method)
-            with urllib.request.urlopen(request, timeout=8) as resp:
+            with urllib.request.urlopen(request, timeout=timeout) as resp:
                 if 200 <= resp.status < 400:
                     return True
         except Exception:
@@ -498,12 +559,7 @@ def ensure_services(force_restart: bool = False) -> str | None:
     start_file_server()
 
     current_url = RUNTIME.get("cloudflare_url")
-    if (
-        not force_restart
-        and current_url
-        and is_tunnel_process_running()
-        and check_tunnel_health(current_url)
-    ):
+    if not force_restart and current_url and is_tunnel_process_running():
         return current_url
 
     stop_tunnel()
