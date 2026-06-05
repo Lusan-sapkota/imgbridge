@@ -38,7 +38,7 @@ PASTE_PANEL = """<!doctype html>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0e1117;
+      --bg: #171923;
       --border: #31333f;
       --text: #fafafa;
       --muted: #808495;
@@ -421,15 +421,11 @@ def stop_tunnel() -> None:
     save_state()
 
 
-def start_tunnel(timeout_seconds: int = 20) -> str | None:
+def start_tunnel(timeout_seconds: int = 25) -> str | None:
     global TUNNEL_PROCESS
 
     load_state()
     start_file_server()
-
-    if RUNTIME.get("cloudflare_url") and check_tunnel_health(RUNTIME["cloudflare_url"]):
-        return RUNTIME["cloudflare_url"]
-
     stop_tunnel()
 
     TUNNEL_PROCESS = subprocess.Popen(
@@ -452,26 +448,66 @@ def start_tunnel(timeout_seconds: int = 20) -> str | None:
             for part in line.split():
                 if part.startswith("https://") and "trycloudflare.com" in part:
                     url = part.strip()
-                    RUNTIME["cloudflare_url"] = url
-                    save_state()
-                    return url
+                    if wait_for_tunnel_health(url):
+                        RUNTIME["cloudflare_url"] = url
+                        save_state()
+                        return url
+                    return None
     return None
 
 
 def restart_tunnel() -> str | None:
-    stop_tunnel()
-    return start_tunnel()
+    return ensure_services(force_restart=True)
+
+
+def is_tunnel_process_running() -> bool:
+    result = subprocess.run(
+        ["pgrep", "-f", f"cloudflared tunnel --url http://localhost:{PORT}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
 
 
 def check_tunnel_health(base_url: str | None) -> bool:
     if not base_url:
         return False
-    try:
-        request = urllib.request.Request(base_url.rstrip("/") + "/", method="HEAD")
-        with urllib.request.urlopen(request, timeout=5) as resp:
-            return 200 <= resp.status < 400
-    except Exception:
-        return False
+
+    target = base_url.rstrip("/") + "/"
+    for method in ("HEAD", "GET"):
+        try:
+            request = urllib.request.Request(target, method=method)
+            with urllib.request.urlopen(request, timeout=8) as resp:
+                if 200 <= resp.status < 400:
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+def wait_for_tunnel_health(base_url: str, attempts: int = 12, delay_seconds: float = 0.5) -> bool:
+    for _ in range(attempts):
+        if check_tunnel_health(base_url):
+            return True
+        time.sleep(delay_seconds)
+    return False
+
+
+def ensure_services(force_restart: bool = False) -> str | None:
+    load_state()
+    start_file_server()
+
+    current_url = RUNTIME.get("cloudflare_url")
+    if (
+        not force_restart
+        and current_url
+        and is_tunnel_process_running()
+        and check_tunnel_health(current_url)
+    ):
+        return current_url
+
+    stop_tunnel()
+    return start_tunnel()
 
 
 def fetch_latest_state() -> dict:
@@ -524,8 +560,8 @@ def upload_file_path(path: str) -> tuple[str, str]:
 
     load_state()
     start_file_server()
-    if not RUNTIME.get("cloudflare_url"):
-        start_tunnel()
+    if not RUNTIME.get("cloudflare_url") or not check_tunnel_health(RUNTIME.get("cloudflare_url")):
+        ensure_services()
     if not RUNTIME.get("cloudflare_url"):
         raise RuntimeError("Cloudflare tunnel is not available. Install cloudflared and try again.")
 
