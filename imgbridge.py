@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import os
+import subprocess
 import sys
 
 from bridge_core import (
@@ -41,9 +43,21 @@ def main() -> int:
         action="store_true",
         help="Restart the Cloudflare tunnel and print the new base URL",
     )
+    parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Remove imgbridge, command wrappers, and the install directory",
+    )
     args = parser.parse_args()
 
     try:
+        if args.uninstall:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            uninstall_sh = os.path.join(script_dir, "uninstall.sh")
+            if not os.path.isfile(uninstall_sh):
+                print("uninstall.sh was not found next to imgbridge.py", file=sys.stderr)
+                return 1
+            return subprocess.call(["bash", uninstall_sh])
         if args.restart_tunnel:
             url = restart_tunnel()
             if not url:

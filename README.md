@@ -8,23 +8,108 @@ Image Bridge runs a small local file server, exposes it through a temporary [Clo
 - markdown (`![screenshot](https://...)`)
 - recent upload history
 
-## Requirements
+Repository: [github.com/Lusan-sapkota/imgbridge](https://github.com/Lusan-sapkota/imgbridge)
 
-- Python 3.11+
-- [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) on your `PATH`
+## Quick install
 
-## Setup
+Linux/macOS one-liner. This will:
+
+- clone the repo to `~/.local/share/imgbridge`
+- create a Python virtualenv and install dependencies
+- install `cloudflared` to `~/.local/bin` if it is missing
+- add `imgbridge` and `imgbridge-ui` commands to `~/.local/bin`
 
 ```bash
-git clone <your-repo-url>
-cd fcc_images
+curl -fsSL https://raw.githubusercontent.com/Lusan-sapkota/imgbridge/main/install.sh | bash
+```
+
+Make sure `~/.local/bin` is on your `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then use it:
+
+```bash
+imgbridge path/to/image.png
+imgbridge-ui
+```
+
+### Custom install location
+
+```bash
+IMGBRIDGE_INSTALL_DIR="$HOME/tools/imgbridge" \
+  curl -fsSL https://raw.githubusercontent.com/Lusan-sapkota/imgbridge/main/install.sh | bash
+```
+
+## Uninstall
+
+Default uninstall removes the app, command wrappers, and running background processes. It does **not** remove `cloudflared` or uploaded images unless you opt in.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Lusan-sapkota/imgbridge/main/uninstall.sh | bash
+```
+
+If imgbridge is already installed:
+
+```bash
+imgbridge --uninstall
+```
+
+Remove everything including runtime uploads and cloudflared (only if imgbridge installed it):
+
+```bash
+IMGBRIDGE_REMOVE_CLOUDFLARED=1 IMGBRIDGE_PURGE_DATA=1 \
+  curl -fsSL https://raw.githubusercontent.com/Lusan-sapkota/imgbridge/main/uninstall.sh | bash
+```
+
+Custom install location:
+
+```bash
+IMGBRIDGE_INSTALL_DIR="$HOME/tools/imgbridge" \
+  curl -fsSL https://raw.githubusercontent.com/Lusan-sapkota/imgbridge/main/uninstall.sh | bash
+```
+
+## Requirements
+
+- Python 3.11+ with `venv`
+- `git` and `curl`
+- [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) (installed automatically by the script if missing)
+
+On Debian/Ubuntu, if Python venv is missing:
+
+```bash
+sudo apt update
+sudo apt install python3-venv git curl
+```
+
+## Manual setup
+
+```bash
+git clone git@github.com:Lusan-sapkota/imgbridge.git
+cd imgbridge
 
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+HTTPS clone:
+
+```bash
+git clone https://github.com/Lusan-sapkota/imgbridge.git
+```
+
 ## Web UI
+
+After quick install:
+
+```bash
+imgbridge-ui
+```
+
+Manual setup:
 
 ```bash
 streamlit run app.py
@@ -42,36 +127,33 @@ The tunnel URL changes when the app restarts. Use **Restart tunnel** if the link
 
 ## CLI
 
-From the project directory with the virtualenv activated:
+After quick install:
 
 ```bash
 # Print URL and markdown
-python imgbridge.py path/to/image.png
+imgbridge path/to/image.png
 
 # URL only
-python imgbridge.py path/to/image.png --url-only
+imgbridge path/to/image.png --url-only
 
 # Markdown only
-python imgbridge.py path/to/image.png --markdown
+imgbridge path/to/image.png --markdown
 
 # Start server + tunnel without opening the UI
-python imgbridge.py --serve
+imgbridge --serve
 
 # Restart tunnel from the terminal
-python imgbridge.py --restart-tunnel
+imgbridge --restart-tunnel
+
+# Uninstall imgbridge
+imgbridge --uninstall
 ```
 
-The CLI is project-local by default. To run it from anywhere, add a wrapper to `~/.local/bin`:
+Manual setup (from the repo with venv activated):
 
 ```bash
-cat > ~/.local/bin/imgbridge <<'EOF'
-#!/usr/bin/env bash
-exec /path/to/fcc_images/.venv/bin/python /path/to/fcc_images/imgbridge.py "$@"
-EOF
-chmod +x ~/.local/bin/imgbridge
+python imgbridge.py path/to/image.png
 ```
-
-Replace `/path/to/fcc_images` with the actual install path.
 
 ## How it works
 
@@ -87,6 +169,8 @@ Replace `/path/to/fcc_images` with the actual install path.
 | `app.py` | Streamlit UI |
 | `imgbridge.py` | CLI entry point |
 | `bridge_core.py` | Server, tunnel, upload, and state logic |
+| `install.sh` | One-line installer script |
+| `uninstall.sh` | One-line uninstaller script |
 | `requirements.txt` | Python dependencies |
 
 ## Security notes
